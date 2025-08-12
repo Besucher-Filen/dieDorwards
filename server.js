@@ -70,6 +70,6 @@ app.post("/api/login", async (req, res) => {
 
     // Erfolgreich → JSON mit Link
     return res.json({ filenLink: loadFilenLink() });
-
+});
 
 app.listen(PORT, () => console.log(`Server läuft auf Port ${PORT}`));
