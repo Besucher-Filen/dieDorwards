@@ -4,13 +4,30 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // === KONFIGURATION ===
-const ALLOWED_USERS = ["Katja", "peter", "lisa"]; // Erlaubte Benutzernamen
-const FILEN_LINK = "https://app.filen.io/#/drive/af477eeb-10ca-4e10-b3d2-5f588a346bc5/4e5d9965-353b-4381-870b-cd20077bfe0f"; // <== Hier monatlich den aktuellen filen.io-Link eintragen
+function loadAllowedUsers() {
+    try {
+        const data = fs.readFileSync(path.join(__dirname, 'users.json'), 'utf8');
+        return JSON.parse(data).map(u => u.toLowerCase());
+    } catch (err) {
+        console.error("Fehler beim Laden von users.json:", err);
+        return [];
+    }
+}
+
+function loadFilenLink() {
+    try {
+        return fs.readFileSync(path.join(__dirname, 'filenlink.txt'), 'utf8').trim();
+    } catch (err) {
+        console.error("Fehler beim Laden von filenlink.txt:", err);
+        return "";
+    }
+}
 const OWNER_EMAIL = "Besucher-filen@gmx.de"; // <== Deine eigene E-Mail-Adresse
 
 // SMTP-Einstellungen für GMX
@@ -31,11 +48,12 @@ app.post("/api/login", async (req, res) => {
     const { username } = req.body || {};
     console.log("Login-Anfrage von:", username);
 
-    const allowedLower = ALLOWED_USERS.map(u => u.toLowerCase());
+    const allowedLower = loadAllowedUsers();  // neue Funktion, die users.json liest
     if (!username || !allowedLower.includes(username.trim().toLowerCase())) {
         console.log("Unbekannter Benutzer:", username);
         return res.status(401).json({ error: "Unbekannter Benutzername" });
     }
+
 
     // E-Mail senden
     try {
@@ -51,7 +69,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     // Erfolgreich → JSON mit Link
-    return res.json({ filenLink: FILEN_LINK });
-});
+    return res.json({ filenLink: loadFilenLink() });
+
 
 app.listen(PORT, () => console.log(`Server läuft auf Port ${PORT}`));
