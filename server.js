@@ -91,7 +91,7 @@ app.post("/api/login", async (req, res) => {
             console.error("E-Mail-Fehler bei falschem Benutzer:", err);
         }
 
-        return res.status(401).json({ error: "Unbekannter Benutzername" });
+        return res.status(401).json({ error: "Unbekannter Benutzername / unknown username" });
     }
 
     // E-Mail senden bei erfolgreichem Login
