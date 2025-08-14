@@ -77,6 +77,7 @@ app.post("/api/login", async (req, res) => {
     const allowedLower = loadAllowedUsers();
     if (!username || !allowedLower.includes(username.trim().toLowerCase())) {
         console.log("Unbekannter Benutzer:", username);
+        console.log("Unknown user:", username); // englische Übersetzung
 
         // E-Mail senden bei falschem Benutzernamen
         try {
@@ -99,7 +100,7 @@ app.post("/api/login", async (req, res) => {
         await transporter.sendMail({
             from: OWNER_EMAIL,
             to: OWNER_EMAIL,
-            subject: `Fotozugang: ${username}`,
+            subject: `${username} hat sich angemeldet`,
             text: `${username} hat sich angemeldet.`
         });
         console.log("E-Mail gesendet für", username);
