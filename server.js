@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // ✅ Render nutzt process.env.PORT
 
 // === KONFIGURATION ===
 function loadAllowedUsers() {
@@ -28,13 +28,13 @@ function loadFilenLink() {
     }
 }
 
-// === Rate-Limiter ===
+// === RATE-LIMITER ===
 const RATE_LIMIT = 100; // Max. Anfragen pro Monat
-let requestCounts = 0;   // gezählte Anfragen
+let requestCounts = 0;
 const resetTime = new Date();
 resetTime.setMonth(resetTime.getMonth() + 1);
 resetTime.setDate(1);
-resetTime.setHours(0,0,0,0);
+resetTime.setHours(0, 0, 0, 0);
 
 function checkRateLimit(req, res, next) {
     const now = new Date();
@@ -51,23 +51,25 @@ function checkRateLimit(req, res, next) {
     next();
 }
 
+// === E-MAIL KONFIGURATION ===
 const OWNER_EMAIL = "Besucher-filen@gmx.de"; // <== Deine eigene E-Mail-Adresse
 
-// SMTP-Einstellungen für GMX
 const transporter = nodemailer.createTransport({
     host: "mail.gmx.net",
     port: 587,
     secure: false,
     auth: {
-        user: OWNER_EMAIL,       // GMX Login (meist E-Mail-Adresse)
-        pass: process.env.GMX_PASS  // Passwort über Umgebungsvariable
+        user: OWNER_EMAIL,
+        pass: process.env.GMX_PASS // Passwort aus Umgebungsvariable
     }
 });
 
+// === MIDDLEWARE ===
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(checkRateLimit); // Rate-Limiter auf alle Anfragen anwenden
 
+// === LOGIN ROUTE ===
 app.post("/api/login", async (req, res) => {
     const { username } = req.body || {};
     console.log("Login-Anfrage von:", username);
@@ -109,4 +111,5 @@ app.post("/api/login", async (req, res) => {
     return res.json({ filenLink: loadFilenLink() });
 });
 
+// === SERVER START ===
 app.listen(PORT, () => console.log(`Server läuft auf Port ${PORT}`));
