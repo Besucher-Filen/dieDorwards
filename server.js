@@ -76,8 +76,7 @@ app.post("/api/login", async (req, res) => {
 
     const allowedLower = loadAllowedUsers();
     if (!username || !allowedLower.includes(username.trim().toLowerCase())) {
-        console.log("Unbekannter Benutzer:", username);
-        console.log("Unknown user:", username); // englische Übersetzung
+        console.log("Unbekannter Benutzer / unknown username", username);
 
         // E-Mail senden bei falschem Benutzernamen
         try {
