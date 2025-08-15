@@ -29,7 +29,7 @@ function loadFilenLink() {
 }
 
 // === RATE-LIMITER ===
-const RATE_LIMIT = 100; // Max. Anfragen pro Monat
+const RATE_LIMIT = 10000; // Max. Anfragen pro Monat
 let requestCounts = 0;
 const resetTime = new Date();
 resetTime.setMonth(resetTime.getMonth() + 1);
