@@ -88,8 +88,8 @@ function ensureAdmin(req, res) {
 
 // === MIDDLEWARE ===
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(checkRateLimit); // Rate-Limiter auf alle Anfragen anwenden
+app.use(express.static(path.join(__dirname, 'public'))); // bedient /public
+app.use(checkRateLimit);
 
 // === LOGIN ROUTE (ohne E-Mail) ===
 app.post("/api/login", async (req, res) => {
@@ -103,7 +103,7 @@ app.post("/api/login", async (req, res) => {
     // Sofortige Antwort → KEIN Warten
     res.status(401).json({ error: "Unbekannter Benutzername / unknown username" });
 
-    // 🆕 NEU: Audit-Log (unauthorized)
+    // Audit-Log (unauthorized)
     logLoginEvent({ username, result: 'unauthorized' }, req);
     return;
   }
@@ -111,7 +111,7 @@ app.post("/api/login", async (req, res) => {
   // Erfolgreich → JSON mit Link (sofort antworten)
   res.json({ filenLink: loadFilenLink() });
 
-  // 🆕 NEU: Audit-Log (success)
+  // Audit-Log (success)
   logLoginEvent({ username, result: 'success' }, req);
 });
 
@@ -159,54 +159,12 @@ app.get('/api/audit.csv', (req, res) => {
   });
 });
 
-// 🆕 NEU: Admin-Seite ohne Backticks (sichere String-Zusammenfügung)
+// 🆕 NEU: Admin-Seite als statische Datei aus /public
+// Aufruf: https://diedorwards.onrender.com/admin/audit
 app.get('/admin/audit', (req, res) => {
-  const html = [
-    '<!doctype html>',
-    '<html lang="de">',
-    '<head>',
-    '<meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    '<title>Audit-Log</title>',
-    '<style>',
-    '  :root { color-scheme: light dark; }',
-    '  body { font-family: system-ui, sans-serif; margin: 20px; }',
-    '  h1 { margin: 0 0 12px; font-size: 1.3rem; }',
-    '  .card { border: 1px solid #8883; border-radius: 12px; padding: 16px; margin-bottom: 16px; }',
-    '  label { display:block; font-size:.9rem; margin: 8px 0 4px; }',
-    '  input, button { padding: 8px 10px; border-radius: 8px; border: 1px solid #8885; }',
-    '  input[type="number"] { width: 120px; }',
-    '  button { cursor: pointer; }',
-    '  table { width:100%; border-collapse: collapse; margin-top: 12px; font-size: .95rem; }',
-    '  th, td { border-bottom: 1px solid #8883; padding: 8px; text-align: left; vertical-align: top; }',
-    '  th { position: sticky; top: 0; background: #fff; }',
-    '  .row { display:flex; gap:12px; align-items:center; flex-wrap: wrap; }',
-    '  .muted { color: #666; font-size: .85rem; }',
-    '  .ok { color: #0a0; }',
-    '  .err { color: #a00; }',
-    '  .badge { padding:2px 6px; border-radius:6px; font-size:.8rem; }',
-    '  .success { background:#0a02; border:1px solid #0a05; }',
-    '  .unauth { background:#a002; border:1px solid #a005; }',
-    '</style>',
-    '</head>',
-    '<body>',
-    '<h1>Audit-Log (Admin)</h1>',
-    '',
-    '<div class="card">',
-    '  <div class="row">',
-    '    <div>',
-    '      <label for="token">Admin-Token</label>',
-    '      <input id="token" type="password" placeholder="ADMIN_TOKEN eingeben">',
-    '    </div>',
-    '    <div>',
-    '      <label for="limit">Anzahl Einträge</label>',
-    '      <input id="limit" type="number" min="1" max="1000" value="200">',
-    '    </div>',
-    '    <div style="align-self: end; display:flex; gap:8px; margin-bottom:4px;">',
-    '      <button id="btnSave">Token speichern</button>',
-    '      <button id="btnLoad">Laden</button>',
-    '      <button id="btnExport">CSV exportieren</button>',
-    '      <button id="btnClear">Token löschen</button>',
-    '    </div>',
-    '  </div>',
-    '  <div class="muted">Hinweis: Setze in Render eine Environment Variable <code>ADMIN_TOKEN</code>. Diese Seite sendet den Token als Header <code>x-admin-token</code> an <code>/api/audi_
+  // leitet auf die statische HTML-Datei um (siehe Schritt 2 unten)
+  res.redirect('/admin-audit.html');
+});
+
+// === SERVER START ===
+app.listen(PORT, () => console.log(`Server läuft auf Port ${PORT}`));

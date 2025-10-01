@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit-Log</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    h1 { margin: 0 0 12px; font-size: 1.3rem; }
+    .card { border: 1px solid #8883; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display:block; font-size:.9rem; margin: 8px 0 4px; }
+    input, button { padding: 8px 10px; border-radius: 8px; border: 1px solid #8885; }
+    input[type="number"] { width: 120px; }
+    button { cursor: pointer; }
+    table { width:100%; border-collapse: collapse; margin-top: 12px; font-size: .95rem; }
+    th, td { border-bottom: 1px solid #8883; padding: 8px; text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; background: #fff; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
+    .muted { color: #666; font-size: .85rem; }
+    .ok { color: #0a0; }
+    .err { color: #a00; }
+    .badge { padding:2px 6px; border-radius:6px; font-size:.8rem; }
+    .success { background:#0a02; border:1px solid #0a05; }
+    .unauth { background:#a002; border:1px solid #a005; }
+  </style>
+</head>
+<body>
+  <h1>Audit-Log (Admin)</h1>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="token">Admin-Token</label>
+        <input id="token" type="password" placeholder="ADMIN_TOKEN eingeben">
+      </div>
+      <div>
+        <label for="limit">Anzahl Einträge</label>
+        <input id="limit" type="number" min="1" max="1000" value="200">
+      </div>
+      <div style="align-self: end; display:flex; gap:8px; margin-bottom:4px;">
+        <button id="btnSave">Token speichern</button>
+        <button id="btnLoad">Laden</button>
+        <button id="btnExport">CSV exportieren</button>
+        <button id="btnClear">Token löschen</button>
+      </div>
+    </div>
+    <div class="muted">
+      Hinweis: Setze in Render eine Environment Variable <code>ADMIN_TOKEN</code>.
+      Diese Seite sendet den Token als Header <code>x-admin-token</code> an <code>/api/audit</code>.
+    </div>
+    <div id="status" class="muted" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card" style="overflow:auto; max-height: 70vh;">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>Zeit (UTC)</th>
+          <th>Benutzername</th>
+          <th>Ergebnis</th>
+          <th>IP</th>
+          <th>User-Agent</th>
+        </tr>
+      </thead>
+    <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+(function(){
+  const $ = sel => document.querySelector(sel);
+
+  const els = {
+    token: $('#token'),
+    limit: $('#limit'),
+    status: $('#status'),
+    tbody: document.querySelector('#tbl tbody'),
+    btnSave: document.querySelector('#btnSave'),
+    btnLoad: document.querySelector('#btnLoad'),
+    btnExport: document.querySelector('#btnExport'),
+    btnClear: document.querySelector('#btnClear'),
+  };
+
+  // LocalStorage-Helpers
+  const KEY = 'audit_admin_token';
+  function getToken(){ return localStorage.getItem(KEY) || ''; }
+  function setToken(v){ localStorage.setItem(KEY, v||''); }
+  function clearToken(){ localStorage.removeItem(KEY); }
+
+  // Init
+  els.token.value = getToken();
+
+  function setStatus(msg, ok){
+    els.status.textContent = msg || '';
+    els.status.className = ok ? 'ok' : (ok===false ? 'err' : 'muted');
+  }
+
+  function esc(s){ return String(s).replace(/</g,'&lt;'); }
+
+  function renderRows(items){
+    els.tbody.innerHTML = '';
+    if (!items.length) {
+      const tr0 = document.createElement('tr');
+      tr0.innerHTML = '<td colspan="5" class="muted">Keine Einträge.</td>';
+      els.tbody.appendChild(tr0);
+      return;
+    }
+    for (const e of items) {
+      const tr = document.createElement('tr');
+      const badge = (e.result === 'success')
+        ? '<span class="badge success">success</span>'
+        : '<span class="badge unauth">unauthorized</span>';
+      tr.innerHTML =
+        '<td>' + (e.ts || '') + '</td>' +
+        '<td>' + esc(e.username || '') + '</td>' +
+        '<td>' + badge + '</td>' +
+        '<td>' + (e.ip || '') + '</td>' +
+        '<td class="muted">' + esc(e.ua || '') + '</td>';
+      els.tbody.appendChild(tr);
+    }
+  }
+
+  async function loadAudit(){
+    const token = (els.token.value || '').trim();
+    if (!token) { setStatus('Bitte ADMIN_TOKEN eingeben.', false); return; }
+    const limit = Math.max(1, Math.min(parseInt(els.limit.value||'200',10) || 200, 1000));
+    setStatus('Lade ...');
+
+    try {
+      const res = await fetch('/api/audit?limit=' + limit, {
+        headers: { 'x-admin-token': token }
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error('HTTP ' + res.status + ': ' + t);
+      }
+      const data = await res.json();
+      renderRows(data);
+      setStatus(data.length + ' Einträge geladen.', true);
+    } catch (err) {
+      setStatus('Fehler: ' + (err && err.message ? err.message : err), false);
+    }
+  }
+
+  async function exportCSV(){
+    const token = (els.token.value || '').trim();
+    if (!token) { setStatus('Bitte ADMIN_TOKEN eingeben.', false); return; }
+    setStatus('CSV wird erstellt ...');
+    try {
+      const res = await fetch('/api/audit.csv', { headers: { 'x-admin-token': token }});
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error('HTTP ' + res.status + ': ' + t);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'audit-' + new Date().toISOString().replace(/[:.]/g,'-') + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus('CSV exportiert.', true);
+    } catch (err) {
+      setStatus('Fehler beim CSV-Export: ' + (err && err.message ? err.message : err), false);
+    }
+  }
+
+  // Events
+  els.btnSave.addEventListener('click', () => { setToken((els.token.value||'').trim()); setStatus('Token gespeichert (localStorage).', true); });
+  els.btnClear.addEventListener('click', () => { clearToken(); els.token.value=''; setStatus('Token gelöscht.', true); });
+  els.btnLoad.addEventListener('click', loadAudit);
+  els.btnExport.addEventListener('click', exportCSV);
+
+  // Optional: Beim Laden direkt versuchen, falls Token vorhanden
+  if (getToken()) loadAudit();
+})();
+</script>
+</body>
+</html>
