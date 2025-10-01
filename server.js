@@ -52,16 +52,28 @@ function checkRateLimit(req, res, next) {
 }
 
 // === E-MAIL KONFIGURATION ===
-const OWNER_EMAIL = "Besucher-filen@gmx.de"; // <== Deine eigene E-Mail-Adresse
+const OWNER_EMAIL = "Besucher-filen@gmx.de"; // 🚨 ZU SETZEN: Deine GMX-Adresse bestätigen/anpassen
 
+// 🔧 GEÄNDERT: Warnhinweis, falls GMX_PASS fehlt (Login bleibt trotzdem schnell)
+if (!process.env.GMX_PASS) {
+    console.warn("⚠️  GMX_PASS ist nicht gesetzt. Mails können fehlschlagen, aber der Login hängt nicht mehr.");
+}
+
+// 🔧 GEÄNDERT: Transporter mit Pool + kurzen Timeouts (blockiert nicht 120s)
 const transporter = nodemailer.createTransport({
     host: "mail.gmx.net",
     port: 587,
     secure: false,
     auth: {
         user: OWNER_EMAIL,
-        pass: process.env.GMX_PASS // Passwort aus Umgebungsvariable
-    }
+        pass: process.env.GMX_PASS // 🚨 ZU SETZEN: Passwort in Render als ENV-Variable hinterlegen
+    },
+    pool: true,             // 🔧 GEÄNDERT
+    maxConnections: 1,      // 🔧 GEÄNDERT
+    maxMessages: 50,        // 🔧 GEÄNDERT
+    connectionTimeout: 5000, // 🔧 GEÄNDERT (5s)
+    greetingTimeout: 5000,   // 🔧 GEÄNDERT (5s)
+    socketTimeout: 5000      // 🔧 GEÄNDERT (5s)
 });
 
 // === MIDDLEWARE ===
@@ -78,37 +90,40 @@ app.post("/api/login", async (req, res) => {
     if (!username || !allowedLower.includes(username.trim().toLowerCase())) {
         console.log("Unbekannter Benutzer / unknown username", username);
 
-        // E-Mail senden bei falschem Benutzernamen
-        try {
-            await transporter.sendMail({
-                from: OWNER_EMAIL,
-                to: OWNER_EMAIL,
-                subject: `Unerlaubter Login-Versuch: ${username}`,
-                text: `Jemand hat versucht, sich mit dem Benutzernamen '${username}' anzumelden.`
-            });
-            console.log("E-Mail für falschen Benutzer gesendet:", username);
-        } catch (err) {
-            console.error("E-Mail-Fehler bei falschem Benutzer:", err);
-        }
+        // 🔧 GEÄNDERT: Sofortige Antwort → KEIN Warten auf Mail
+        res.status(401).json({ error: "Unbekannter Benutzername / unknown username" });
 
-        return res.status(401).json({ error: "Unbekannter Benutzername / unknown username" });
-    }
-
-    // E-Mail senden bei erfolgreichem Login
-    try {
-        await transporter.sendMail({
+        // 🔧 GEÄNDERT: Mail asynchron (Fire-and-Forget), damit Login nicht blockiert
+        transporter.sendMail({
             from: OWNER_EMAIL,
             to: OWNER_EMAIL,
-            subject: `${username} hat sich angemeldet`,
-            text: `${username} hat sich angemeldet.`
+            subject: `Unerlaubter Login-Versuch: ${username}`,
+            text: `Jemand hat versucht, sich mit dem Benutzernamen '${username}' anzumelden.`
+        }).then(() => {
+            console.log("E-Mail für falschen Benutzer gesendet:", username);
+        }).catch(err => {
+            console.error("E-Mail-Fehler bei falschem Benutzer:", err);
         });
-        console.log("E-Mail gesendet für", username);
-    } catch (err) {
-        console.error("E-Mail-Fehler:", err);
+
+        return; // 🔧 GEÄNDERT: Route sauber beenden
     }
 
-    // Erfolgreich → JSON mit Link
-    return res.json({ filenLink: loadFilenLink() });
+    // 🔧 GEÄNDERT: Erst antworten (sofort), dann Mail im Hintergrund
+    res.json({ filenLink: loadFilenLink() });
+
+    // 🔧 GEÄNDERT: E-Mail asynchron (ohne await) – blockiert den Login nicht
+    transporter.sendMail({
+        from: OWNER_EMAIL,
+        to: OWNER_EMAIL,
+        subject: `${username} hat sich angemeldet`,
+        text: `${username} hat sich angemeldet.`
+    }).then(() => {
+        console.log("E-Mail gesendet für", username);
+    }).catch(err => {
+        console.error("E-Mail-Fehler:", err);
+    });
+
+    return; // 🔧 GEÄNDERT: klarer Abschluss
 });
 
 // === SERVER START ===
