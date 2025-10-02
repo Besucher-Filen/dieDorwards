@@ -49,7 +49,7 @@ function checkRateLimit(req, res, next) {
   next();
 }
 
-// === 🆕 NEU: Upstash Redis (REST) ===
+// === 🆕 NEU: Upstash Redis (REST) für Audit-Logs ===
 // 🚨 ZU SETZEN in Render: ADMIN_TOKEN, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN; // Pflicht für Admin-API
 const UP_URL = process.env.UPSTASH_REDIS_REST_URL;   // z.B. https://eu1-xxxxx.upstash.io
@@ -62,7 +62,7 @@ if (!ADMIN_TOKEN) {
   console.warn('⚠️  ADMIN_TOKEN ist nicht gesetzt. /api/audit-Endpunkte werden 401 liefern.');
 }
 
-// Helfer: IP ermitteln
+// 🆕 NEU: Helfer – Client-IP
 function getClientIp(req) {
   const xf = req.headers['x-forwarded-for'];
   if (xf) return xf.split(',')[0].trim();
@@ -85,8 +85,6 @@ async function upstashAppendAudit(entryObj) {
       },
       body: JSON.stringify(payload)
     });
-    // Erwartete Antwort: Array von Objekten mit { result: ... } (oder { error: ... })
-    // Wir ignorieren hier bewusst die Details, loggen nur Fehlertext.
     if (!res.ok) {
       const t = await res.text();
       console.error('Upstash pipeline HTTP-Fehler:', res.status, t);
@@ -104,16 +102,12 @@ async function upstashFetchAudit(limit) {
     const res = await fetch(UP_URL + '/lrange/audit:logins/0/' + end, {
       headers: { 'Authorization': 'Bearer ' + UP_TOKEN }
     });
-    const data = await res.json(); // { result: [ 'json', 'json', ... ] } oder { error: '...' }
+    const data = await res.json(); // { result: [ 'json', ... ] } oder { error: '...' }
     if (data && Array.isArray(data.result)) {
-      // LPUSH ⇒ Index 0 ist neuester; für Anzeige aufsteigend sortieren:
-      const parsed = data.result.map(s => {
-        try { return JSON.parse(s); } catch { return null; }
-      }).filter(Boolean);
-      return parsed.reverse();
+      const parsed = data.result.map(s => { try { return JSON.parse(s); } catch { return null; } }).filter(Boolean);
+      return parsed.reverse(); // neueste zuerst gespeichert → für Anzeige umdrehen
     } else if (data && data.error) {
       console.error('Upstash LRANGE Fehler:', data.error);
-      return [];
     }
   } catch (err) {
     console.error('Upstash Fetch Fehler:', err);
@@ -139,6 +133,14 @@ function ensureAdmin(req, res) {
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public'))); // bedient /public
 app.use(checkRateLimit);
+
+// === 🆕 NEU: Health-Checks (wichtig für Render) ===
+app.get('/', (req, res) => {
+  res.type('text/plain').send('OK'); // einfacher 200er Root-Check
+});
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ ok: true, time: new Date().toISOString() });
+});
 
 // === LOGIN ROUTE (ohne E-Mail, mit Upstash-Audit) ===
 app.post('/api/login', async (req, res) => {
