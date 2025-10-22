@@ -5,9 +5,9 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000; // ✅ Render nutzt process.env.PORT
+const PORT = process.env.PORT || 3000; // Render nutzt process.env.PORT
 
-// ====== KONFIGURATION ======
+// ====== Dateien laden ======
 function loadAllowedUsers() {
   try {
     const data = fs.readFileSync(path.join(__dirname, 'users.json'), 'utf8');
@@ -17,7 +17,6 @@ function loadAllowedUsers() {
     return [];
   }
 }
-
 function loadFilenLink() {
   try {
     return fs.readFileSync(path.join(__dirname, 'filenlink.txt'), 'utf8').trim();
@@ -27,21 +26,26 @@ function loadFilenLink() {
   }
 }
 
-// ====== RATE-LIMITER (einfach) ======
-const RATE_LIMIT = 10000; // Max. Anfragen pro Monat
+// ====== Einfacher Monats-Rate-Limiter ======
+const RATE_LIMIT = 10000; // Max. Anfragen pro Monat (global)
 let requestCounts = 0;
 const resetTime = new Date();
 resetTime.setMonth(resetTime.getMonth() + 1);
 resetTime.setDate(1);
 resetTime.setHours(0, 0, 0, 0);
 
+// Health-Checks vom Limit ausnehmen, sonst 429 bei /healthz
 function checkRateLimit(req, res, next) {
+  if (req.path === '/healthz' || req.path === '/') return next();
+
   const now = new Date();
   if (now >= resetTime) {
-    requestCounts = 0; // Reset monatlich
+    requestCounts = 0;
     resetTime.setMonth(now.getMonth() + 1);
     resetTime.setDate(1);
+    resetTime.setHours(0, 0, 0, 0);
   }
+
   if (requestCounts >= RATE_LIMIT) {
     return res.status(429).json({ error: 'Rate limit exceeded. Try next month.' });
   }
@@ -49,9 +53,9 @@ function checkRateLimit(req, res, next) {
   next();
 }
 
-// ====== ENV-VARIABLEN (🚨 ZU SETZEN in Render) ======
+// ====== ENV (in Render setzen) ======
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN; // Pflicht für Admin-API
-const UP_URL   = process.env.UPSTASH_REDIS_REST_URL;   // z.B. https://eu1-xxxxx.upstash.io
+const UP_URL   = process.env.UPSTASH_REDIS_REST_URL;   // https://...upstash.io (REST URL)
 const UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN; // WRITE-Token (nicht read-only)
 
 if (!UP_URL || !UP_TOKEN) {
@@ -61,14 +65,12 @@ if (!ADMIN_TOKEN) {
   console.warn('⚠️  ADMIN_TOKEN ist nicht gesetzt. /api/audit-Endpunkte werden 401 liefern.');
 }
 
-// ====== Helfer ======
+// ====== Helpers ======
 function getClientIp(req) {
   const xf = req.headers['x-forwarded-for'];
   if (xf) return xf.split(',')[0].trim();
   return (req.socket && req.socket.remoteAddress) || req.ip || '';
 }
-
-// fetch mit Timeout (Abbruch)
 async function fetchWithTimeout(url, opts = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -169,17 +171,25 @@ function ensureAdmin(req, res) {
   return true;
 }
 
-// ====== MIDDLEWARE ======
+// ====== Middleware ======
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public'))); // bedient /public
-app.use(checkRateLimit);
+app.use(express.static(path.join(__dirname, 'public')));
 
-// ====== Health-Checks (wichtig für Render) ======
+// Health-Checks (vor Limiter, zusätzlich zum Skip in checkRateLimit)
 app.get('/', (req, res) => {
-  res.type('text/plain').send('OK'); // einfacher 200er Root-Check
+  res.type('text/plain').send('OK');
 });
 app.get('/healthz', (req, res) => {
   res.status(200).json({ ok: true, time: new Date().toISOString() });
+});
+
+// Limiter NACH Health-Routen
+app.use(checkRateLimit);
+
+// Alias /login -> /api/login (Kompatibilität fürs Frontend)
+app.post('/login', (req, res, next) => {
+  req.url = '/api/login';
+  next();
 });
 
 // ====== LOGIN (ohne E-Mail, mit Upstash-Audit) ======
@@ -222,7 +232,7 @@ app.post('/api/login', async (req, res) => {
   upstashAppendAudit(entry); // asynchron
 });
 
-// ====== Admin-API: JSON (letzte N Einträge, default 100) ======
+// ====== Admin-API ======
 app.get('/api/audit', async (req, res) => {
   if (!ensureAdmin(req, res)) return;
   const limit = Math.max(1, Math.min(Number(req.query.limit) || 100, 1000));
@@ -230,7 +240,6 @@ app.get('/api/audit', async (req, res) => {
   res.json(rows);
 });
 
-// ====== Admin-API: CSV ======
 app.get('/api/audit.csv', async (req, res) => {
   if (!ensureAdmin(req, res)) return;
   const limit = Math.max(1, Math.min(Number(req.query.limit) || 1000, 5000));
@@ -250,7 +259,7 @@ app.get('/api/audit.csv', async (req, res) => {
   res.send(header + csv + '\n');
 });
 
-// ====== Admin: Selftest (Write + Read sofort prüfen) ======
+// Selftest (Write + Read prüfen)
 app.get('/api/audit-selftest', async (req, res) => {
   if (!ensureAdmin(req, res)) return;
   const testEntry = {
@@ -274,10 +283,9 @@ app.get('/api/audit-selftest', async (req, res) => {
 });
 
 // ====== Admin-Seite (statisch) ======
-// Aufruf: https://diedorwards.onrender.com/admin/audit  → leitet auf /admin-audit.html
 app.get('/admin/audit', (req, res) => {
   res.redirect('/admin-audit.html');
 });
 
-// ====== SERVER START ======
+// ====== Start ======
 app.listen(PORT, () => console.log('Server läuft auf Port ' + PORT));
