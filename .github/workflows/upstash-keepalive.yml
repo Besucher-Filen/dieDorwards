@@ -2,17 +2,19 @@ name: upstash-keepalive
 
 on:
   schedule:
-    - cron: "7 4 * * *"   # täglich 04:07 UTC
-  workflow_dispatch: {}    # manuell auslösbar
+    # Täglich 04:07 UTC (entspricht 06:07 in Deutschland im Winter)
+    - cron: "7 4 * * *"
+  workflow_dispatch: {}  # Manuell auslösbar
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Upstash (LRANGE 0..0)
+      - name: Ping Upstash (LRANGE 0..0, mit Timeout/Retry)
         run: |
           set -e
-          curl -fsS \
+          curl -fsS --max-time 20 --retry 3 --retry-delay 5 \
             -H "Authorization: Bearer ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" \
-            "${{ secrets.UPSTASH_REDIS_REST_URL }}/lrange/audit:logins/0/0" >/dev/null
+            "${{ secrets.UPSTASH_REDIS_REST_URL }}/lrange/audit:logins/0/0" \
+            -w "\nHTTP %{http_code}\n" >/dev/null
           echo "OK: Upstash ping gesendet."
