@@ -2,12 +2,17 @@ name: upstash-keepalive
 
 on:
   schedule:
-    # Täglich 04:07 UTC (entspricht 06:07 in Deutschland im Winter)
+    # TÄGLICH um 04:07 UTC (06:07 MEZ): Upstash-Read als Aktivität
     - cron: "7 4 * * *"
+    # MONATLICH am 1. um 04:12 UTC: Heartbeat-Commit, um Repo-Aktivität zu erzeugen
+    - cron: "12 4 1 * *"
   workflow_dispatch: {}  # Manuell auslösbar
 
+permissions:
+  contents: write  # nötig für den Heartbeat-Commit
+
 jobs:
-  ping:
+  keepalive:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Upstash (LRANGE 0..0, mit Timeout/Retry)
@@ -18,3 +23,24 @@ jobs:
             "${{ secrets.UPSTASH_REDIS_REST_URL }}/lrange/audit:logins/0/0" \
             -w "\nHTTP %{http_code}\n" >/dev/null
           echo "OK: Upstash ping gesendet."
+
+      # Nur am 1. des Monats: Heartbeat-Datei aktualisieren & committen
+      - name: Prüfe Datum (UTC)
+        id: date
+        run: echo "DAY=$(date -u +%d)" >> $GITHUB_OUTPUT
+
+      - name: Repository auschecken
+        if: ${{ steps.date.outputs.DAY == '01' }}
+        uses: actions/checkout@v4
+
+      - name: Heartbeat committen (nur am 1.)
+        if: ${{ steps.date.outputs.DAY == '01' }}
+        run: |
+          set -e
+          mkdir -p .github
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/heartbeat.txt
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/heartbeat.txt
+          git commit -m "chore: monthly heartbeat ($(date -u +%F))" || echo "Nichts zu committen."
+          git push
